@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="XR Sandbox"/>
+<meta name="theme-color" content="#0a0a0a"/>
+<title>XR Sandbox — LowC</title>
+<style>
+  :root { --bg:#0a0a0a; --fg:#f2f2f2; --mut:#8a8a8a; --acc:#c8ff3d; --warn:#ff4d6d; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 -apple-system,system-ui,sans-serif; }
+  body { padding: calc(12px + env(safe-area-inset-top)) 16px 28px; max-width: 480px; margin:0 auto; }
+  h1 { font-size:22px; margin:8px 0 4px; }
+  p,li { color:var(--mut); }
+  .tag { color:var(--acc); font-size:11px; letter-spacing:.12em; text-transform:uppercase; }
+  .card { border:1px solid #222; border-radius:14px; padding:14px; margin:12px 0; background:#111; }
+  button, .btn {
+    display:block; width:100%; text-align:center; padding:12px; border-radius:12px;
+    border:0; background:var(--acc); color:#111; font-weight:700; margin:8px 0; text-decoration:none;
+  }
+  .ghost { background:#1a1a1a; color:var(--fg); border:1px solid #333; }
+  textarea { width:100%; min-height:90px; background:#000; color:var(--fg); border:1px solid #333; border-radius:10px; padding:10px; }
+  .ok { color:var(--acc); }
+</style>
+</head>
+<body>
+  <div class="tag">iPhone XR · userspace sandbox · Toolaid</div>
+  <h1>XR Sandbox</h1>
+  <p>Owned-device drop zone. No cloud judge. Notes stay on this phone.</p>
+  <div class="card">
+    <strong>Install</strong>
+    <p>Safari → Share → Add to Home Screen → name it <b>XR Sandbox</b>.</p>
+  </div>
+  <div class="card">
+    <strong>Presence check</strong>
+    <p>Plug Key is hands + timing. This page only logs that you were here.</p>
+    <button id="mark">Mark presence</button>
+    <div id="log" class="ok"></div>
+  </div>
+  <div class="card">
+    <strong>Session note</strong>
+    <textarea id="note" placeholder="What this sandbox session is for..."></textarea>
+    <button class="ghost" id="save">Save note to this phone</button>
+    <div id="saved" class="ok"></div>
+  </div>
+  <div class="card">
+    <strong>Vaults</strong>
+    <a class="btn ghost" href="https://github.com/xxlowcxx/PlugKey-IPP">PlugKey-IPP</a>
+    <a class="btn ghost" href="https://github.com/xxlowcxx/T00L-AID">T00L-AID</a>
+    <a class="btn ghost" href="https://github.com/xxlowcxx/XR-Sandbox">This repo</a>
+  </div>
+  <p class="tag">LowC · D0t Matr1x · 2026-09-29</p>
+<script>
+  const log = document.getElementById('log');
+  document.getElementById('mark').onclick = () => {
+    const t = new Date().toISOString();
+    const prev = JSON.parse(localStorage.getItem('xr_presence') || '[]');
+    prev.push(t);
+    localStorage.setItem('xr_presence', JSON.stringify(prev));
+    log.textContent = 'presence ' + t + ' · count ' + prev.length;
+  };
+  const note = document.getElementById('note');
+  note.value = localStorage.getItem('xr_note') || '';
+  document.getElementById('save').onclick = () => {
+    localStorage.setItem('xr_note', note.value);
+    document.getElementById('saved').textContent = 'saved on device';
+  };
+</script>
+</body>
+</html>
