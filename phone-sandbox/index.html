@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="D0t Sandbox"/>
+<meta name="theme-color" content="#0a0a0a"/>
+<title>D0t Sandbox</title>
+<style>
+  :root { --bg:#0a0a0a; --fg:#f2f2f2; --mut:#8d8d8d; --acc:#c8ff3d; --warn:#ff4d6d; --line:#242424; --card:#111; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.4 -apple-system,system-ui,sans-serif; }
+  body { padding: calc(10px + env(safe-area-inset-top)) 14px calc(24px + env(safe-area-inset-bottom)); max-width:480px; margin:0 auto; }
+  h1 { font-size:22px; margin:6px 0 2px; }
+  h2 { font-size:14px; margin:0 0 8px; }
+  p { color:var(--mut); }
+  .tag { color:var(--acc); font-size:11px; letter-spacing:.14em; text-transform:uppercase; }
+  .card { border:1px solid var(--line); border-radius:14px; padding:12px; margin:12px 0; background:var(--card); }
+  button { display:block; width:100%; text-align:center; padding:12px; border-radius:12px; border:0; background:var(--acc); color:#111; font-weight:700; margin:8px 0; }
+  .ghost { background:#1a1a1a; color:var(--fg); border:1px solid #333; }
+  .danger { background:#2a1016; color:var(--warn); border:1px solid #5a2030; }
+  input[type=file] { display:none; }
+  textarea { width:100%; min-height:72px; background:#000; color:var(--fg); border:1px solid #333; border-radius:10px; padding:10px; }
+  .row { display:flex; gap:8px; }
+  .row button { flex:1; }
+  .item { border-top:1px solid #222; padding:8px 0; font-size:13px; }
+  .ok { color:var(--acc); font-size:13px; }
+  .bad { color:var(--warn); font-size:13px; }
+  .hash { font-family:ui-monospace,Menlo,monospace; font-size:11px; word-break:break-all; color:#9ad; }
+  .slots { display:flex; flex-wrap:wrap; gap:6px; }
+  .slot { border:1px solid #333; border-radius:999px; padding:6px 10px; font-size:12px; color:var(--mut); background:#111; }
+  .slot.on { border-color:var(--acc); color:var(--acc); }
+</style>
+</head>
+<body>
+  <div class="tag">on-device · userspace · LowC</div>
+  <h1>D0t Sandbox</h1>
+  <p>Owned-phone vault. Drop lands in quarantine. Hash latch stays on this origin. Projects do not fuse.</p>
+  <div class="card"><h2>ORIGIN</h2><div id="origin" class="ok">booting</div><button id="presence" class="ghost">Mark presence</button></div>
+  <div class="card"><h2>DROP → QUARANTINE</h2><label class="btn" for="pick" style="display:block;text-align:center;padding:12px;border-radius:12px;background:#c8ff3d;color:#111;font-weight:700">Drop a file</label><input id="pick" type="file" multiple/><div class="slots" id="slots"></div><div id="dropmsg" class="ok"></div></div>
+  <div class="card"><h2>LEDGER</h2><div id="ledger"></div><div class="row"><button id="export" class="ghost">Export ledger</button><button id="refresh" class="ghost">Refresh</button></div></div>
+  <div class="card"><h2>NOTE</h2><textarea id="note" placeholder="Session note. Stays on this phone."></textarea><button id="savenote" class="ghost">Save note</button><div id="notemsg" class="ok"></div></div>
+  <p class="tag">D0t Matr1x · 2026-10-01 · not a ROM</p>
+<script>
+const SLOTS = ['Hexcore','Tool God','NERVEGRID','PhoenixWrap','HandOfGod','Plug Key','Helixlock','KEEP'];
+let slot = localStorage.getItem('ds_slot') || 'KEEP';
+const dbp = new Promise((resolve, reject) => {
+  const req = indexedDB.open('dotsandbox', 1);
+  req.onupgradeneeded = () => {
+    const db = req.result;
+    if (!db.objectStoreNames.contains('files')) db.createObjectStore('files', { keyPath: 'id' });
+  };
+  req.onsuccess = () => resolve(req.result);
+  req.onerror = () => reject(req.error);
+});
+function tx(store, mode) { return dbp.then(db => db.transaction(store, mode).objectStore(store)); }
+function allFiles() {
+  return tx('files','readonly').then(s => new Promise((res, rej) => { const q = s.getAll(); q.onsuccess = () => res(q.result || []); q.onerror = () => rej(q.error); }));
+}
+function putFile(row) {
+  return tx('files','readwrite').then(s => new Promise((res, rej) => { const q = s.put(row); q.onsuccess = () => res(); q.onerror = () => rej(q.error); }));
+}
+function delFile(id) {
+  return tx('files','readwrite').then(s => new Promise((res, rej) => { const q = s.delete(id); q.onsuccess = () => res(); q.onerror = () => rej(q.error); }));
+}
+async function sha256(buf) {
+  const dig = await crypto.subtle.digest('SHA-256', buf);
+  return [...new Uint8Array(dig)].map(b => b.toString(16).padStart(2,'0')).join('');
+}
+async function opfsRoot() {
+  if (!navigator.storage || !navigator.storage.getDirectory) return null;
+  return navigator.storage.getDirectory();
+}
+async function writeBytes(lane, name, buf) {
+  const root = await opfsRoot();
+  if (!root) return 'idb-only';
+  const dir = await root.getDirectoryHandle(lane, { create: true });
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(buf); await w.close();
+  return 'opfs';
+}
+async function removeBytes(lane, name) {
+  const root = await opfsRoot();
+  if (!root) return;
+  try { const dir = await root.getDirectoryHandle(lane); await dir.removeEntry(name); } catch (e) {}
+}
+function renderSlots() {
+  const box = document.getElementById('slots');
+  box.innerHTML = '';
+  SLOTS.forEach(name => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'slot' + (name === slot ? ' on' : '');
+    b.textContent = name;
+    b.onclick = () => { slot = name; localStorage.setItem('ds_slot', name); renderSlots(); };
+    box.appendChild(b);
+  });
+}
+async function render() {
+  const rows = (await allFiles()).sort((a,b) => b.added.localeCompare(a.added));
+  const box = document.getElementById('ledger');
+  if (!rows.length) { box.innerHTML = '<p>empty quarantine</p>'; return; }
+  box.innerHTML = '';
+  rows.forEach(r => {
+    const d = document.createElement('div');
+    d.className = 'item';
+    d.innerHTML = '<b>' + r.name + '</b> · ' + r.lane + ' · ' + r.project + '<br><span class="' + (r.catch ? 'bad' : 'ok') + '">' + (r.catch || 'LATCHED') + '</span><div class="hash">' + r.sha256 + '</div>';
+    const row = document.createElement('div');
+    row.className = 'row';
+    if (r.lane !== 'trusted') {
+      const trust = document.createElement('button');
+      trust.className = 'ghost'; trust.textContent = 'Trust';
+      trust.onclick = async () => { r.lane = 'trusted'; await putFile(r); render(); };
+      row.appendChild(trust);
+    }
+    const burn = document.createElement('button');
+    burn.className = 'danger'; burn.textContent = 'Burn';
+    burn.onclick = async () => { await removeBytes(r.lane, r.id); await delFile(r.id); render(); };
+    row.appendChild(burn);
+    d.appendChild(row);
+    box.appendChild(d);
+  });
+}
+document.getElementById('pick').onchange = async (ev) => {
+  const msg = document.getElementById('dropmsg');
+  const files = [...ev.target.files];
+  const existing = await allFiles();
+  for (const f of files) {
+    const buf = await f.arrayBuffer();
+    const hash = await sha256(buf);
+    const prior = existing.find(x => x.name === f.name && x.project === slot);
+    const caught = prior && prior.sha256 !== hash ? 'CATCH hash changed' : '';
+    const id = slot + '__' + f.name.replace(/[^\w.\-]+/g, '_');
+    const where = await writeBytes('quarantine', id, buf);
+    await putFile({ id, name: f.name, project: slot, lane: 'quarantine', sha256: hash, size: f.size, added: new Date().toISOString(), store: where, catch: caught });
+    msg.textContent = (caught ? caught + ' · ' : 'latched · ') + f.name + ' · ' + where;
+  }
+  ev.target.value = '';
+  render();
+};
+document.getElementById('presence').onclick = () => {
+  const t = new Date().toISOString();
+  const prev = JSON.parse(localStorage.getItem('ds_presence') || '[]');
+  prev.push(t);
+  localStorage.setItem('ds_presence', JSON.stringify(prev));
+  document.getElementById('origin').textContent = 'presence ' + t + ' · ' + prev.length;
+};
+document.getElementById('savenote').onclick = () => {
+  localStorage.setItem('ds_note', document.getElementById('note').value);
+  document.getElementById('notemsg').textContent = 'note saved on this origin';
+};
+document.getElementById('export').onclick = async () => {
+  const payload = { exported: new Date().toISOString(), files: await allFiles(), note: localStorage.getItem('ds_note') || '' };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'dotsandbox-ledger.json';
+  a.click();
+};
+document.getElementById('refresh').onclick = render;
+document.getElementById('note').value = localStorage.getItem('ds_note') || '';
+renderSlots();
+render();
+const opfs = !!(navigator.storage && navigator.storage.getDirectory);
+document.getElementById('origin').textContent = (opfs ? 'OPFS live' : 'IndexedDB only') + ' · ' + (window.navigator.standalone ? 'home screen' : 'browser tab');
+</script>
+</body>
+</html>
